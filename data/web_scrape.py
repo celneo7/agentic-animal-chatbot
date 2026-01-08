@@ -37,13 +37,33 @@ for a in animals:
     output = []
     output.append(f"# {title}\n")
 
+    counter = 0
+    prev = 'intro'
+
     for el in content.find_all(["h2", "h3", "p", "ul"]):
         if el.name == "h2":
+            counter += 1
+
+            # save to file
+            with open(os.curdir + f'/data/{a}/{a}_{prev}.txt', 'w', encoding='utf-8') as f:
+                f.write("\n".join(output))
+
+            output = []
             header = clean_header(el.get_text())
+            prev = header
             output.append(f"\n## {header}\n")
 
         elif el.name == "h3":
             header = clean_header(el.get_text())
+            counter += 1
+
+            # save to file
+            with open(os.curdir + f'/data/{a}/{a}_{prev}.txt', 'w', encoding='utf-8') as f:
+                f.write("\n".join(output))
+
+            output = []
+            header = clean_header(el.get_text())
+            prev = header
             output.append(f"\n### {header}\n")
 
         elif el.name in ["p", "ul"]:
@@ -51,9 +71,8 @@ for a in animals:
             if len(text) > 40:
                 output.append(text + "\n")
 
+        if counter == 10:
+            break
     
     
-
-    # save to file
-    with open(os.curdir + f'/data/{a}_wiki.txt', 'w', encoding='utf-8') as f:
-        f.write("\n".join(output))
+    
