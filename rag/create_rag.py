@@ -27,7 +27,7 @@ for a in animals:
 
 # chunking
 text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=300,
+    chunk_size=450,
     chunk_overlap=100,
     separators=['\n']
 )
@@ -54,10 +54,3 @@ try:
 except Exception as e:
     print(f"Error setting up ChromaDB: {str(e)}")
     raise
-
-
-# retriever 
-retriever = vectorstore.as_retriever(
-    search_type="similarity",
-    search_kwargs={"k": 3} # amount of chunks to return
-)
