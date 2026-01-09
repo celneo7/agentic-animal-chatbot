@@ -1,14 +1,20 @@
-from flask import Flask
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 import sys
 sys.path.insert(1, 'C:/Users/Celeste/Documents/Data Science/1-project/agentic-animal-chatbot/')
 from agents.main import agent_workflow
 
 
 app = Flask(__name__)
+CORS(app)
 
-@app.route("/data")
-def get_data():
-    agent_workflow
+@app.route("/chat", methods= ["POST"])
+def get_answer():
+    response = request.json
+    user_message = response['message']
+    
+    answer = agent_workflow
+
     return
 
 

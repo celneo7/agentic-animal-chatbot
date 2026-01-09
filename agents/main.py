@@ -1,23 +1,27 @@
 from langchain_ollama import ChatOllama
 from langchain_core.tools import tool, Tool
-from typing import TypedDict, Annotated, Sequence
-from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, ToolMessage
+from typing import TypedDict, Annotated, Sequence, Literal
+from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, ToolMessage, AIMessage
 from langgraph.graph.message import add_messages
 import requests
 from langchain_chroma import Chroma
-import sys
-sys.path.insert(1, 'C:/Users/Celeste/Documents/Data Science/1-project/agentic-animal-chatbot/') # Add the folder path
 from langchain_community.utilities import GoogleSerperAPIWrapper
 from dotenv import load_dotenv
+from langchain_community.agent_toolkits.load_tools import load_tools
 from langgraph.graph import StateGraph, END
 from langchain_ollama import OllamaEmbeddings
 import os
+from langchain.agents import create_agent
+from pydantic import BaseModel, Field
 
 load_dotenv()
 
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
+    context: str
+    question: str
+    decision: str
 
 llm = ChatOllama(model='llama3.1', temperature=0.7)
 embed_model = OllamaEmbeddings(model="nomic-embed-text")
@@ -29,7 +33,7 @@ vectorstore = Chroma(persist_directory=os.curdir + '/rag/rag_db', embedding_func
 
 retriever = vectorstore.as_retriever(
     search_type="similarity",
-    search_kwargs={"k": 1} # amount of chunks to return
+    search_kwargs={"k": 3} # amount of chunks to return
 )
 
 
@@ -56,43 +60,93 @@ def retriever_tool(query: str) -> str:
     return "\n\n".join(results)
 
 
-system_prompt = """
-    You are an intelligent AI assistant who answers questions about animals possibly loaded into your knowledge base.
-    Use the retriever tool available to answer questions about animal. You can make multiple calls if needed.
-    If you need to look up some information before asking a follow up question, you are allowed to do that!
-    Please always cite the specific parts of the documents you use in your answers.
-    """
 
 def rag_agent(state: AgentState) -> AgentState:
     """Function for calling RAG agent and executing tools"""
 
-    curr = list(state['messages'])
+    system_prompt = f"""
+    You are an intelligent AI assistant who answers questions about animals possibly loaded into your knowledge base.
+    Use the retriever tool available to answer questions about animal. You can make multiple calls if needed.
+    If you need to look up some information before asking a follow up question, you are allowed to do that!
+    Please always cite the specific parts of the documents you use in your answers.
 
+    Question: {state['question']}
+    """
     llm = ChatOllama(model='llama3.1', temperature=0.7)
     rag_agent = llm.bind_tools([retriever_tool])
     
-    curr = [SystemMessage(content=system_prompt)] + curr
-    message = rag_agent.invoke(curr)
+    message = rag_agent.invoke([SystemMessage(content=system_prompt), HumanMessage(content=str(state['question']))])
 
-    print(f"\n===== RAG Agent =====\n\n{message.content}\n\n{'='*50}\n\n")
+    #print(f"\n===== RAG Agent =====\n\n{message.content}\n\n{'='*50}\n\n")
 
     tool_msg = []
+    context = ''
 
     for m in message.tool_calls:
         if m['name'] != retriever_tool.name: # Checks if a valid tool is present
             print(f"\nTool: {m['name']} does not exist.")
         else:
             result = retriever_tool.invoke(m['args'].get('query', ''))
+            context += str(result) + '\n'
             tool_msg.append(ToolMessage(tool_call_id=m['id'], name=m['name'], content=str(result)))
-            print(f"Result : {(str(result))}")
+            #print(f"Result : {(str(result))}")
 
-    return {'messages': tool_msg}
+    return {'messages': [message] + tool_msg, 'context': context, 'question': state['question']}
 
+
+
+class NextStep(BaseModel):
+    '''Next action chosen given current information retrieved'''
+
+    decision: Literal["answer", "api"] = Field(
+        description="Next action chosen",
+    )
+    justification: str = Field(
+        description="Reason for action chosen, and what to do next",
+    )
+
+
+
+def deciding_agent(state: AgentState) -> AgentState:
+    """Function to evaluate current context needs additional information"""
+
+    system_prompt = f"""
+        You are an intelligent decision maker and evaluator. Your job is to determine the next action needed to answer the user's question.
+
+        Review the user's question and the retrieved context or information carefully. Then decide:
+
+        1. 'answer': Choose this ONLY if the current context contains sufficient, relevant information that directly addresses the user's question.
+
+        2. 'api': Choose this if:
+        - The context is relevant but incomplete/insufficient to fully answer the question
+        - The context is irrelevant or off-topic (e.g., context about cats when the question is about monkeys)
+        - No context has been retrieved yet
+        - Additional information is needed from external sources
+
+        When choosing 'api', clearly specify:
+        - What information is missing or why current context is insufficient
+        - What specific information needs to be retrieved
+        - Any search terms or parameters that would help get relevant information
+
+        You can make multiple tool calls if needed to gather all necessary information.
+
+        **Important**: If the current context is completely irrelevant to the question (wrong topic entirely), you MUST choose 'api' to retrieve appropriate information rather than 'answer'.
+
+        Question: {state['question']}
+        Current information: {state['context']}
+    """
+    message = ChatOllama(model='llama3.1', temperature=0.7).with_structured_output(NextStep).invoke([SystemMessage(content=system_prompt), HumanMessage(content=str(state['question']))])
+
+    # print(f"===== Deciding Agent =====\n\n{message}\n\n{'='*50}\n\n")
+
+    res = f'Decision: {message.decision}.\nJustification & next action: {message.justification}'
+
+    return {'messages': [AIMessage(content=res)], 'decision': message.decision, 'context': state['context'], 'question': state['question']}
 
 
 # Define API tools
 @tool
-def get_dog_info() -> str:
+def get_dog_facts() -> str:
    """
    Get Dog facts (only 5 random facts at a time).
    """ 
@@ -103,46 +157,21 @@ def get_dog_info() -> str:
    return ('\n'.join(res))
 
 # web search API
-search = GoogleSerperAPIWrapper(serper_api_key=os.environ['SERPER_API_KEY'])
-
-from langchain_community.agent_toolkits.load_tools import load_tools
-tools = load_tools(["google-serper"])
-# tools = tool + [get_dog_info]
-
-tools = [Tool(
-        name="Web Search tool",
-        description="Tool that can search the web for information",
-        func=search.run
-    )]
-
-
-system_prompt = """
-    You are an intelligent AI assistant who fact checks the answer given.
-    Use either the Dog Fact API tool or Web Searcher tool available to obtain more information relevant to the question about animal. You can make multiple calls if needed.
-    """
-
-def deciding_agent(state: AgentState) -> AgentState:
-    """Function to evaluate current context needs additional information"""
-
-    curr = list(state['messages'])
-    msgs = [SystemMessage(content=system_prompt)] + curr
-    
-    llm2 = ChatOllama(model='llama3.1', temperature=0.7)
-    deciding_agent = llm2.bind_tools(tools)
-    message = deciding_agent.invoke(msgs)
-
-    print(f"===== Deciding Agent =====\n\n{message.content}\n\n{'='*50}\n\n")
-
-    return {'messages': [message]}
-
-
+tools = load_tools(["google-serper"]) + [get_dog_facts]
 
 def api_agent(state: AgentState) -> AgentState:
     """Function for executing API tool"""
 
-    msgs = list(state['messages'])
+    system_prompt = f"""
+    You are an intelligent AI assistant excellent at identify relevant information and researching for additional information in regards to user's question about an animal.
+    Use either Dog Fact API or Web Search tool to provide additional information required.
+    You can make multiple tool calls if needed to gather all necessary information.
 
-    message = msgs[-1]
+    Question: {state['question']}
+    Current information: {state['context']}
+    """
+
+    message = ChatOllama(model='llama3.1', temperature=0.7).bind_tools(tools).invoke([SystemMessage(content=system_prompt), HumanMessage(content=str(state['question']))] )
 
     tools_dict = {our_tool.name: our_tool for our_tool in tools}
 
@@ -154,38 +183,30 @@ def api_agent(state: AgentState) -> AgentState:
         else:
             result = tools_dict[m['name']].invoke(m['args'].get('query', ''))
             tool_msg.append(ToolMessage(tool_call_id=m['id'], name=m['name'], content=str(result)))
-            print(f"Result : {(str(result))}")
+            #print(f"Result : {(str(result))}")
 
-    return {'messages': tool_msg }
+    return {'messages': [message] + tool_msg, 'context': state['context'], 'question': state['question']}
 
-system_prompt = """
-    You are an AI assistant that generates accurate, concise, and helpful answers. Please give an answer even if repeating what was previously answered.
-    """
+
 
 def answering_agent(state: AgentState) -> AgentState:
     """Function for calling LLM agent to answer question given relevant context"""
-    
-    llm = ChatOllama(model='llama3.1', temperature=0.7)
-    curr = list(state['messages'])    
-    msgs = [SystemMessage(content=system_prompt)] + curr
-    message = llm.invoke(msgs)
 
-    print(f"===== Answering Agent =====\n\n{message.content}\n\n{'='*50}\n\n")
+    system_prompt = f"""
+    You are a helpful AI assistant answering a user's question about animals. 
+
+    Use this information: {state['context']}
+    """  
+    message = ChatOllama(model='llama3.1', temperature=0.7).invoke([SystemMessage(content=system_prompt), HumanMessage(content=str(state['question']))] )
+
+    # print(f"===== Answering Agent =====\n\n{message.content}\n\n{'='*50}\n\n")
 
     return {'messages': [message]}
 
 
 
 def next_step(state: AgentState):
-    result = state['messages'][-1]
-    print(result)
-
-    if len(result.tool_calls) > 0:
-   # if "API_CALL" in result.content:
-        return "api"
-    else:
-        return "answer"
-    
+    return state['decision']
 
 
 graph = StateGraph(AgentState)
@@ -212,12 +233,23 @@ graph.add_edge("answering_agent", END)
 
 agent_workflow = graph.compile()
 
-def print_stream(stream):
-    for s in stream:
-        message = s["messages"][-1]
-        if isinstance(message, tuple):
-            print(message)
-        else:
-            message.pretty_print()
+msg = "what are monkeys typically like?"
+# input("Enter your question on an animal: ")
 
-agent_workflow.invoke({'messages': HumanMessage(input("Enter your question on an animal: "))})
+for event in (agent_workflow.stream({'question': msg})):
+    for node, update in (event.items()):
+        print(node)
+
+        response = update['messages']
+        print('='*50)
+        for msg in response:
+            if isinstance(msg, ToolMessage):
+                print(f'Tool Response: {msg.content}\n\n')
+            if isinstance(msg, AIMessage):
+                if msg.content:
+                    print(f'Agent Answer: {msg.content}\n\n')
+                if msg.tool_calls:
+                    print(f'Tool Called: {msg.tool_calls}\n\n')
+
+
+        print('='*50)
