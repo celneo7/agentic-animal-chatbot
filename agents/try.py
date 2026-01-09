@@ -86,10 +86,8 @@ msg = "what are dogs typically like?"
 
 for event in (graph.compile().stream({'question': msg})):
     for node, update in (event.items()):
-        print(node)
 
         response = update['messages']
-        print('='*50)
         for msg in response:
             if isinstance(msg, ToolMessage):
                 print(f'Tool Response: {msg.content}\n\n')
@@ -100,6 +98,5 @@ for event in (graph.compile().stream({'question': msg})):
                     print(f'Tool Called: {msg.tool_calls}\n\n')
 
 
-        print('='*50)
 
 

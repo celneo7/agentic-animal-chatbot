@@ -1,17 +1,15 @@
 from langchain_ollama import ChatOllama
-from langchain_core.tools import tool, Tool
+from langchain_core.tools import tool
 from typing import TypedDict, Annotated, Sequence, Literal
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, ToolMessage, AIMessage
 from langgraph.graph.message import add_messages
 import requests
 from langchain_chroma import Chroma
-from langchain_community.utilities import GoogleSerperAPIWrapper
 from dotenv import load_dotenv
 from langchain_community.agent_toolkits.load_tools import load_tools
 from langgraph.graph import StateGraph, END
 from langchain_ollama import OllamaEmbeddings
 import os
-from langchain.agents import create_agent
 from pydantic import BaseModel, Field
 
 load_dotenv()
@@ -72,7 +70,6 @@ def rag_agent(state: AgentState) -> AgentState:
 
     Question: {state['question']}
     """
-    llm = ChatOllama(model='llama3.1', temperature=0.7)
     rag_agent = llm.bind_tools([retriever_tool])
     
     message = rag_agent.invoke([SystemMessage(content=system_prompt), HumanMessage(content=str(state['question']))])
@@ -135,7 +132,7 @@ def deciding_agent(state: AgentState) -> AgentState:
         Question: {state['question']}
         Current information: {state['context']}
     """
-    message = ChatOllama(model='llama3.1', temperature=0.7).with_structured_output(NextStep).invoke([SystemMessage(content=system_prompt), HumanMessage(content=str(state['question']))])
+    message = llm.with_structured_output(NextStep).invoke([SystemMessage(content=system_prompt), HumanMessage(content=str(state['question']))])
 
     # print(f"===== Deciding Agent =====\n\n{message}\n\n{'='*50}\n\n")
 
@@ -171,7 +168,7 @@ def api_agent(state: AgentState) -> AgentState:
     Current information: {state['context']}
     """
 
-    message = ChatOllama(model='llama3.1', temperature=0.7).bind_tools(tools).invoke([SystemMessage(content=system_prompt), HumanMessage(content=str(state['question']))] )
+    message = llm.bind_tools(tools).invoke([SystemMessage(content=system_prompt), HumanMessage(content=str(state['question']))] )
 
     tools_dict = {our_tool.name: our_tool for our_tool in tools}
 
@@ -197,7 +194,7 @@ def answering_agent(state: AgentState) -> AgentState:
 
     Use this information: {state['context']}
     """  
-    message = ChatOllama(model='llama3.1', temperature=0.7).invoke([SystemMessage(content=system_prompt), HumanMessage(content=str(state['question']))] )
+    message = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=str(state['question']))] )
 
     # print(f"===== Answering Agent =====\n\n{message.content}\n\n{'='*50}\n\n")
 
@@ -233,23 +230,23 @@ graph.add_edge("answering_agent", END)
 
 agent_workflow = graph.compile()
 
-msg = "what are monkeys typically like?"
-# input("Enter your question on an animal: ")
+# msg = "what are cat claws?"
+# # input("Enter your question on an animal: ")
 
-for event in (agent_workflow.stream({'question': msg})):
-    for node, update in (event.items()):
-        print(node)
+# for event in (agent_workflow.stream({'question': msg}, stream_mode ='updates')):
+#     for node, update in (event.items()):
+#         print(node)
+#         print(update)
 
-        response = update['messages']
-        print('='*50)
-        for msg in response:
-            if isinstance(msg, ToolMessage):
-                print(f'Tool Response: {msg.content}\n\n')
-            if isinstance(msg, AIMessage):
-                if msg.content:
-                    print(f'Agent Answer: {msg.content}\n\n')
-                if msg.tool_calls:
-                    print(f'Tool Called: {msg.tool_calls}\n\n')
+        # response = update['messages']
+        # print('='*50)
+        # for msg in response:
+        #     if isinstance(msg, ToolMessage):
+        #         print(msg)
+        #         print(f'Tool Response: {msg.content}\n\n')
+        #     if isinstance(msg, AIMessage):
+        #         if msg.content:
+        #             print(f'Agent Answer: {msg.content}\n\n')
 
 
-        print('='*50)
+        # print('='*50)
