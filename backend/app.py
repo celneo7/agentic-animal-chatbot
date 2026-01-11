@@ -8,11 +8,14 @@ import json
 app = Flask(__name__)
 CORS(app)
 
-@app.route("/chat", methods= ["POST"])
+@app.route("/chat", methods= ["GET"])
 def stream():
-    question = request.json.get('question')
-
+    question = request.args.get('question') 
+    
+    if not question:
+        return "Missing question", 400
     def get_answer():
+        print(question)
         for event in agent_workflow.stream({'question': question}, stream_mode='updates'):
             for node, update in event.items():
 
@@ -21,23 +24,25 @@ def stream():
 
                 response = update['messages']
                 
-                res_json = {'agent': str(node), 'answer': '', 'count': 0 }
-
+                
+                res_json = {'agent': str(node), 'answer': '', 'tools': {}}
+        
                 for msg in response:
+                    
                     m_type = getattr(msg, 'type', '')
 
                     if m_type == 'tool': #ToolMessage
                         t_name = getattr(msg, 'name', 'tool')
                         t_content = getattr(msg, 'content', '')
-                        
-                        res_json["count"] += 1
-                        res_json[f'tool{res_json["count"] + 1}'] = (t_name, t_content)
-                        
+                    
+                        res_json['tools'][f'{t_name}'] = t_content
+     
                     elif m_type == 'ai': # AIMessage
                         m_content = getattr(msg, 'content', '')
-                        if isinstance(m_content, str):
-                            res_json['answer'] = m_content   
-            yield f"data: {json.dumps(res_json)}\n\n"
+                        res_json['answer'] = m_content
+                print(res_json)        
+                yield f"data: {json.dumps(res_json)}\n\n"
+
         yield f"data: {json.dumps({'agent': 'done'})}\n\n"
 
     return Response(

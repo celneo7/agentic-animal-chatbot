@@ -1,4 +1,5 @@
 from langchain_ollama import ChatOllama
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_core.tools import tool
 from typing import TypedDict, Annotated, Sequence, Literal
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, ToolMessage, AIMessage
@@ -21,12 +22,15 @@ class AgentState(TypedDict):
     question: str
     decision: str
 
-llm = ChatOllama(model='llama3.1', temperature=0.7)
-embed_model = OllamaEmbeddings(model="nomic-embed-text")
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.7)
+embed_model = GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
+
+
+# llm = ChatOllama(model="llama3.1", temperature=0.7)
 
 
 # load RAG
-vectorstore = Chroma(persist_directory=os.curdir + '/rag/rag_db', embedding_function=embed_model,
+vectorstore = Chroma(persist_directory=os.curdir + '/rag/rag_db2', embedding_function=embed_model,
         collection_name="animals")
 
 retriever = vectorstore.as_retriever(
@@ -230,23 +234,26 @@ graph.add_edge("answering_agent", END)
 
 agent_workflow = graph.compile()
 
-# msg = "what are cat claws?"
-# # input("Enter your question on an animal: ")
+msg = "what are cat claws?"
+# input("Enter your question on an animal: ")
+
+
+
 
 # for event in (agent_workflow.stream({'question': msg}, stream_mode ='updates')):
 #     for node, update in (event.items()):
 #         print(node)
 #         print(update)
 
-        # response = update['messages']
-        # print('='*50)
-        # for msg in response:
-        #     if isinstance(msg, ToolMessage):
-        #         print(msg)
-        #         print(f'Tool Response: {msg.content}\n\n')
-        #     if isinstance(msg, AIMessage):
-        #         if msg.content:
-        #             print(f'Agent Answer: {msg.content}\n\n')
+#         response = update['messages']
+#         print('='*50)
+#         for msg in response:
+#             if isinstance(msg, ToolMessage):
+#                 print(msg)
+#                 print(f'Tool Response: {msg.content}\n\n')
+#             if isinstance(msg, AIMessage):
+#                 if msg.content:
+#                     print(f'Agent Answer: {msg.content}\n\n')
 
 
-        # print('='*50)
+#         print('='*50)
