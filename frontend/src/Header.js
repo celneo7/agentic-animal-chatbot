@@ -3,8 +3,9 @@ import './styles/Header.css'
 export default function Header(){
     return (<header>
         <div className="app-brand">
-            <p>Logo</p>
+            <div>🐾</div>
             <p>App Name</p>
+            <div>🐾</div>
         </div>
         
         <div className='sidebar'>sidebar</div>

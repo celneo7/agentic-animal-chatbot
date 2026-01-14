@@ -7,13 +7,14 @@ header{
 
 .app-brand{
     display: flex;
-    padding-left: 50px;
-    padding-top: 20px;
-    
+    align-items: center;
+    padding-left: 46px;
+    padding-top: 12px;
+    column-gap: 7px;
 }
 
 .sidebar{
     display: flex;
-    padding-right: 50px;
-    padding-top: 20px;
+    padding-right: 46px;
+    padding-top: 12px;
 }

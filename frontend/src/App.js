@@ -4,7 +4,9 @@ import Chat from './Chat'
 import Header from './Header'
 
 function App() {
-  return (<main><Header/> <Chat /></main>)
+  return (<main><Header/> <Chat />
+  
+  </main>)
 
 }
 
